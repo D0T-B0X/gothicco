@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from "react";
 import GLBViewer from './components/glbviewer'; // Component to display the 3D Panda model
 import pandaApi from "./api/pandaApi"; // API client for backend communication
 
-const PANDA_AVATAR = "/assets/panda-avatar.png"; // Path to a fallback panda avatar (currently unused in JSX)
+const PANDA_AVATAR = "/assets/panda-avatar.png";
 
 const PandaChat = () => {
   // Refs for managing browser APIs and DOM elements directly
@@ -14,9 +14,9 @@ const PandaChat = () => {
   // State variables for managing component's data and UI
   const [isListening, setIsListening] = useState(false); // True if the app is actively listening for voice input
   const [input, setInput] = useState(""); // Current text in the input field
-  const [messages, setMessages] = useState([]); // Array of chat messages (user and panda)
-  const [pandaTyping, setPandaTyping] = useState(false); // True if panda is "typing" (processing response)
-  const [pandaTalking, setPandaTalking] = useState(false); // True if panda is "talking" (controls animation)
+  const [messages, setMessages] = useState([]); // Array of chat messages 
+  const [pandaTyping, setPandaTyping] = useState(false); // True if panda is "typing" 
+  const [pandaTalking, setPandaTalking] = useState(false); // True if panda is "talking" 
   const [avatarBounce, setAvatarBounce] = useState(false); // True to trigger avatar bounce animation
   const [conversation_id, setConversationId] = useState(null); // ID for the current chat conversation
 
@@ -28,8 +28,10 @@ const PandaChat = () => {
         setConversationId(result.conversation_id); // Store the received conversation ID
         console.log("Conversation created:", result.conversation_id);
       } catch (error) {
-        console.error("Failed to create conversation: ", error);
-        // Optionally, set an error message in the UI here
+        setMessages(prev => [...prev, {
+          sender: "panda",
+          text: "Something went wrong. Please try again."
+        }]);
       }
     }
 

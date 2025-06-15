@@ -8,7 +8,7 @@ const pandaApi = {
     /**
      * Sends a text message to the backend.
      * @param {string} message - The text message to send.
-     * @param {string|null} conversation_id - The ID of the current conversation (optional).
+     * @param {string|null} conversation_id - The ID of the current conversation.
      * @returns {Promise<object>} The response data from the API.
      * @throws {Error} If the API call fails.
      */
@@ -21,12 +21,10 @@ const pandaApi = {
         try {
             // Make a POST request to the endpoint.
             // The request body contains the message text and input type.
-            // Query parameters (like conversation_id) are passed in the `params` object.
             const response = await axios.post(endpoint,
                 { text: message, input_type: "text" }, // Request body
                 { params } // Query parameters
             );
-            // Return the data part of the API response.
             return response.data;
         } catch (error) {
             // Log the error to the console for debugging.
@@ -44,8 +42,6 @@ const pandaApi = {
     async createConversation() {
         try {
             // Make a POST request to the new conversation endpoint.
-            // Note: There's a typo in the template literal here. It should be `${API_BASE_URL}`.
-            // Corrected: const response = await axios.post(`${API_BASE_URL}/conversation/new`);
             const response = await axios.post(`${API_BASE_URL}/conversation/new`); // Corrected template literal
             // Return the data part of the API response.
             return response.data;
@@ -61,7 +57,7 @@ const pandaApi = {
      * Sends an audio file (blob) to the backend for speech-to-text processing.
      * @param {Blob} audioBlob - The audio data as a Blob object.
      * @param {string} language - The language of the audio (defaults to "en-US").
-     * @param {string|null} conversation_id - The ID of the current conversation (optional).
+     * @param {string|null} conversation_id - The ID of the current conversation.
      * @returns {Promise<object>} The response data from the API, typically including transcribed text and AI response.
      * @throws {Error} If the API call fails.
      */
