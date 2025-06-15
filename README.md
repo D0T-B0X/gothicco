@@ -102,21 +102,18 @@ Follow these steps to get the project running locally:
         Copy `.env.example` to `.env` if an example file exists, or create a new `.env` file in the `pandacore` directory.
         Add your Google Gemini API key:
         ```env
-        # /home/DotBox/Programming/mlsa_hackathon/gothicco/pandacore/.env
+        # /home/gothicco/pandacore/.env
         GEMINI_API_KEY="YOUR_GEMINI_API_KEY_HERE"
         
         # Optional: You can also define HOST and PORT if needed, but defaults are usually fine.
         # HOST=0.0.0.0
         # PORT=8000
         ```
-        **Important:** Replace `"YOUR_GEMINI_API_KEY_HERE"` with your actual API key.
 
 3.  **Frontend Setup (`pandalora`):**
     *   Navigate to the frontend directory (from the project root):
         ```bash
-        cd ../pandalora 
-        # Or if you are in pandacore, cd ../pandalora
-        # Or if you are at the root, cd pandalora
+        cd pandalora/ 
         ```
     *   Install Node.js dependencies:
         ```bash
