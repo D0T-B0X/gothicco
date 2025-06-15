@@ -1,3 +1,10 @@
 fastapi
 uvicorn
-python-dotenv 
+python-dotenv
+google-generativeai
+speechrecognition
+pydub
+python-multipart
+websockets
+aiofiles
+httpx 
