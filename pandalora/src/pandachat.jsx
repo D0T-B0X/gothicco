@@ -20,6 +20,89 @@ const PandaChat = () => {
   const [avatarBounce, setAvatarBounce] = useState(false); // True to trigger avatar bounce animation
   const [conversation_id, setConversationId] = useState(null); // ID for the current chat conversation
 
+  // New state variables for periodic parsing
+  const [currentPhraseIndex, setCurrentPhraseIndex] = useState(0);
+  const [parsedPhrases, setParsedPhrases] = useState([]);
+  const [isParsingResponse, setIsParsingResponse] = useState(false);
+  const playTimeoutRef = useRef(null); // Ref to store the timeout ID for phrase playback
+
+  // Helper function to split text into phrases based on punctuation
+  const splitIntoPhrases = (text) => {
+    // Split by common sentence-ending punctuation, keeping the punctuation with the phrase
+    const sentences = text.match(/[^.!?]+[.!?]|$[^.!?]*/g) || [];
+    // Filter out empty strings and trim whitespace
+    return sentences.map(s => s.trim()).filter(s => s.length > 0);
+  };
+
+  // Function to play phrases one by one with a delay
+  const playPhrases = (phrases, startIndex = 0) => {
+    if (playTimeoutRef.current) {
+      clearTimeout(playTimeoutRef.current);
+      window.speechSynthesis.cancel(); // Stop any ongoing speech
+    }
+    setCurrentPhraseIndex(startIndex);
+    setPandaTalking(true); // Start talking animation
+
+    const speakPhrase = (index) => {
+      if (index < phrases.length) {
+        const phrase = phrases[index];
+        // Use browser's TTS to speak the phrase
+        const utterance = new SpeechSynthesisUtterance(phrase);
+        const voices = window.speechSynthesis.getVoices();
+        const voice = voices.find(v => v.name.includes('Female') || v.name.includes('female'));
+        if (voice) utterance.voice = voice;
+
+        utterance.onend = () => {
+          // If there are more phrases, schedule the next one
+          if (index + 1 < phrases.length) {
+            playTimeoutRef.current = setTimeout(() => speakPhrase(index + 1), 750); // Delay between phrases
+            setCurrentPhraseIndex(index + 1);
+          } else {
+            setPandaTalking(false); // Stop talking animation after last phrase
+            setIsParsingResponse(false); // Done parsing this response
+          }
+        };
+        window.speechSynthesis.speak(utterance);
+      } else {
+        setPandaTalking(false); // In case playPhrases called with empty array
+        setIsParsingResponse(false);
+      }
+    };
+    speakPhrase(startIndex);
+  };
+
+  // Function to navigate to the previous phrase
+  const handlePreviousPhrase = () => {
+    if (currentPhraseIndex > 0) {
+      const newIndex = currentPhraseIndex - 1;
+      setCurrentPhraseIndex(newIndex);
+      // Re-play from the new index if needed, or just display
+      if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+      }
+      setPandaTalking(true);
+      const utterance = new SpeechSynthesisUtterance(parsedPhrases[newIndex]);
+      utterance.onend = () => setPandaTalking(false);
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  // Function to navigate to the next phrase
+  const handleNextPhrase = () => {
+    if (currentPhraseIndex < parsedPhrases.length - 1) {
+      const newIndex = currentPhraseIndex + 1;
+      setCurrentPhraseIndex(newIndex);
+      // Re-play from the new index if needed, or just display
+      if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+      }
+      setPandaTalking(true);
+      const utterance = new SpeechSynthesisUtterance(parsedPhrases[newIndex]);
+      utterance.onend = () => setPandaTalking(false);
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
   // useEffect hook to initialize a new conversation when the component mounts
   useEffect(() => {
     async function initConversation() {
@@ -36,6 +119,17 @@ const PandaChat = () => {
     }
 
     initConversation(); // Call the initialization function
+
+    return () => {
+      // Cleanup for playTimeoutRef if component unmounts
+      if (playTimeoutRef.current) {
+        clearTimeout(playTimeoutRef.current);
+      }
+      // Also cancel any ongoing speech synthesis
+      if (window.speechSynthesis.speaking) {
+        window.speechSynthesis.cancel();
+      }
+    };
   }, []); // Empty dependency array means this runs once on mount
 
   // Function to start voice input recognition
@@ -125,41 +219,56 @@ const PandaChat = () => {
 
             // Send the audio blob to the backend API
             const response = await pandaApi.sendSpeech(audioBlob, "en-US", conversation_id);
+            const pandaResponseText = response.response || "I'm not sure how to respond to that.";
 
-            setPandaTalking(true); // Trigger panda talking animation
             setPandaTyping(false); // Panda is no longer "typing"
 
-            // Add panda's response to the chat messages
-            const pandaMessage = {
-              sender: "panda",
-              text: response.response,
-            };
-            setMessages(prev => [...prev, pandaMessage]);
+            // Check if the response is long enough for periodic parsing
+            const words = pandaResponseText.split(/\s+/).filter(word => word.length > 0);
+            if (words.length > 15) {
+              const phrases = splitIntoPhrases(pandaResponseText);
+              setParsedPhrases(phrases);
+              setIsParsingResponse(true);
+              // Add the full response as a single message to the chat history (not for display in bubble)
+              setMessages(prev => [...prev, { sender: "panda", text: pandaResponseText }]);
+              playPhrases(phrases);
+            } else {
+              setIsParsingResponse(false);
+              setParsedPhrases([]); // Clear previous phrases
+              // Add panda's response to the chat messages
+              const pandaMessage = {
+                sender: "panda",
+                text: pandaResponseText,
+              };
+              setMessages(prev => [...prev, pandaMessage]);
 
-            // If the backend indicates the response was to speech, use browser's TTS
-            if(response.input_type === "speech" && response.audio_data && response.audio_format) {
-              // This part assumes playAudioResponse function is defined and handles base64 audio
-              // playAudioResponse(response.audio_data, response.audio_format);
-              // If not using playAudioResponse, and relying on browser TTS for text:
-              const utterance = new SpeechSynthesisUtterance(response.response);
-              // Configure voice (optional)
-              const voices = window.speechSynthesis.getVoices();
-              const voice = voices.find(v => v.name.includes('Female') || v.name.includes('female'));
-              if (voice) utterance.voice = voice;
-              utterance.onend = () => setPandaTalking(false); // Stop animation when speech ends
-              window.speechSynthesis.speak(utterance);
-            } else if (response.audio_data && response.audio_format) {
-                // If backend sent audio data (e.g., from Gemini TTS)
+              setPandaTalking(true); // Trigger panda talking animation
+
+              // If the backend indicates the response was to speech, use browser's TTS
+              if(response.input_type === "speech" && response.audio_data && response.audio_format) {
                 // This part assumes playAudioResponse function is defined and handles base64 audio
                 // playAudioResponse(response.audio_data, response.audio_format);
-                // For now, let's use browser TTS as a placeholder if playAudioResponse isn't here
+                // If not using playAudioResponse, and relying on browser TTS for text:
                 const utterance = new SpeechSynthesisUtterance(response.response);
-                utterance.onend = () => setPandaTalking(false);
+                // Configure voice (optional)
+                const voices = window.speechSynthesis.getVoices();
+                const voice = voices.find(v => v.name.includes('Female') || v.name.includes('female'));
+                if (voice) utterance.voice = voice;
+                utterance.onend = () => setPandaTalking(false); // Stop animation when speech ends
                 window.speechSynthesis.speak(utterance);
-            } else {
-              // Fallback animation timing if no specific audio playback
-              const talkTime = Math.min(900 + pandaMessage.text.length * 30, 3000);
-              setTimeout(() => setPandaTalking(false), talkTime);
+              } else if (response.audio_data && response.audio_format) {
+                  // If backend sent audio data (e.g., from Gemini TTS)
+                  // This part assumes playAudioResponse function is defined and handles base64 audio
+                  // playAudioResponse(response.audio_data, response.audio_format);
+                  // For now, let's use browser TTS as a placeholder if playAudioResponse isn't here
+                  const utterance = new SpeechSynthesisUtterance(response.response);
+                  utterance.onend = () => setPandaTalking(false);
+                  window.speechSynthesis.speak(utterance);
+              } else {
+                // Fallback animation timing if no specific audio playback
+                const talkTime = Math.min(900 + pandaMessage.text.length * 30, 3000);
+                setTimeout(() => setPandaTalking(false), talkTime);
+              }
             }
 
           } catch (error) {
@@ -212,29 +321,44 @@ const PandaChat = () => {
     try {
       // Send the text message to the backend API
       const response = await pandaApi.sendMessage(input, conversation_id);
+      const pandaResponseText = response.response || "I'm not sure how to respond to that.";
 
       setPandaTyping(false); // Panda is no longer "typing"
-      setPandaTalking(true); // Trigger panda talking animation
 
-      // Add panda's response to the chat messages
-      const pandaMessage = {
-        sender: "panda",
-        text: response.response || "I'm not sure how to respond to that.", // Fallback response
-      };
-      setMessages((prev) => [...prev, pandaMessage]);
-      
-      // If backend sent audio data for the text response
-      if (response.audio_data && response.audio_format) {
-        // This part assumes playAudioResponse function is defined and handles base64 audio
-        // playAudioResponse(response.audio_data, response.audio_format);
-        // For now, let's use browser TTS as a placeholder if playAudioResponse isn't here
-        const utterance = new SpeechSynthesisUtterance(response.response);
-        utterance.onend = () => setPandaTalking(false);
-        window.speechSynthesis.speak(utterance);
+      // Check if the response is long enough for periodic parsing
+      const words = pandaResponseText.split(/\s+/).filter(word => word.length > 0);
+      if (words.length > 15) {
+        const phrases = splitIntoPhrases(pandaResponseText);
+        setParsedPhrases(phrases);
+        setIsParsingResponse(true);
+        // Add the full response as a single message to the chat history (not for display in bubble)
+        setMessages(prev => [...prev, { sender: "panda", text: pandaResponseText }]);
+        playPhrases(phrases);
       } else {
-        // Fallback animation timing if no specific audio playback
-        const talkTime = Math.min(900 + pandaMessage.text.length * 30, 3000);
-        setTimeout(() => setPandaTalking(false), talkTime);
+        setIsParsingResponse(false);
+        setParsedPhrases([]); // Clear previous phrases
+        // Add panda's response to the chat messages
+        const pandaMessage = {
+          sender: "panda",
+          text: pandaResponseText,
+        };
+        setMessages((prev) => [...prev, pandaMessage]);
+
+        setPandaTalking(true); // Trigger panda talking animation
+
+        // If backend sent audio data for the text response
+        if (response.audio_data && response.audio_format) {
+          // This part assumes playAudioResponse function is defined and handles base64 audio
+          // playAudioResponse(response.audio_data, response.audio_format);
+          // For now, let's use browser TTS as a placeholder if playAudioResponse isn't here
+          const utterance = new SpeechSynthesisUtterance(response.response);
+          utterance.onend = () => setPandaTalking(false);
+          window.speechSynthesis.speak(utterance);
+        } else {
+          // Fallback animation timing if no specific audio playback
+          const talkTime = Math.min(900 + pandaMessage.text.length * 30, 3000);
+          setTimeout(() => setPandaTalking(false), talkTime);
+        }
       }
 
     } catch (error) {
@@ -300,9 +424,9 @@ const PandaChat = () => {
             boxShadow: "0 2px 8px #0002",
             fontSize: 16,
             zIndex: 10, // Ensure it's above other elements
-            // Display only if the last message is from panda
+            // Display only if the last message is from panda or if parsing a response
             display:
-              messages.length > 0 && messages[messages.length - 1].sender === "panda"
+              isParsingResponse || (messages.length > 0 && messages[messages.length - 1].sender === "panda")
                 ? "block"
                 : "none",
             transition: "opacity 0.3s",
@@ -310,8 +434,10 @@ const PandaChat = () => {
             textAlign: "center",
           }}
         >
-          {/* Display text of the last panda message */}
-          {messages.length > 0 && messages[messages.length - 1].sender === "panda"
+          {/* Display text of the last panda message or current parsed phrase */}
+          {isParsingResponse
+            ? parsedPhrases[currentPhraseIndex] || ""
+            : messages.length > 0 && messages[messages.length - 1].sender === "panda"
             ? messages[messages.length - 1].text
             : ""}
           {/* Speech bubble tail */}
@@ -329,6 +455,63 @@ const PandaChat = () => {
             }}
           />
         </div>
+
+        {/* Navigation buttons for phrases */}
+        {isParsingResponse && parsedPhrases.length > 1 && (
+          <div style={{
+            position: "absolute",
+            top: "calc(50% - 160px)", // Position above the speech bubble
+            width: "100%",
+            display: "flex",
+            justifyContent: "space-between",
+            padding: "0 20px",
+            boxSizing: "border-box",
+            zIndex: 11,
+          }}>
+            <button
+              onClick={handlePreviousPhrase}
+              disabled={currentPhraseIndex === 0}
+              style={{
+                background: "rgba(0,0,0,0.5)",
+                color: "#fff",
+                border: "none",
+                borderRadius: "50%",
+                width: "40px",
+                height: "40px",
+                fontSize: "20px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: currentPhraseIndex === 0 ? 0.5 : 1,
+                transition: "opacity 0.2s",
+              }}
+            >
+              &#9664; {/* Left arrow */}
+            </button>
+            <button
+              onClick={handleNextPhrase}
+              disabled={currentPhraseIndex === parsedPhrases.length - 1}
+              style={{
+                background: "rgba(0,0,0,0.5)",
+                color: "#fff",
+                border: "none",
+                borderRadius: "50%",
+                width: "40px",
+                height: "40px",
+                fontSize: "20px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: currentPhraseIndex === parsedPhrases.length - 1 ? 0.5 : 1,
+                transition: "opacity 0.2s",
+              }}
+            >
+              &#9654; {/* Right arrow */}
+            </button>
+          </div>
+        )}
         {/* Panda avatar container */}
         <div
           style={{
